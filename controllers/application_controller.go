@@ -20,10 +20,15 @@ import (
 	"context"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-logr/logr"
 	"io/ioutil"
+	v1 "k8s.io/api/apps/v1"
+	v12 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/scheme"
+	//"k8s.io/client-go/restmapper"
 	"os"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -32,7 +37,7 @@ import (
 	gitopsv1 "github.com/uvegla/potato/api/v1"
 )
 
-// ApplicationReconciler reconciles a Application object
+// ApplicationReconciler reconciles an Application object
 type ApplicationReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
@@ -87,6 +92,7 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	logger.Info("Cloning into: " + repositoryPath)
 
+	resourceVersion := "1"
 	if _, err := os.Stat(repositoryPath); err != nil {
 		if os.IsNotExist(err) {
 			_, err := git.PlainClone("/tmp/"+req.NamespacedName.String(), false, &git.CloneOptions{
@@ -95,6 +101,10 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 				Depth:         1,
 				Progress:      os.Stdout,
 			})
+
+			// TODO Handle errors
+			//head, _ := repository.Head()
+			//resourceVersion = head.Hash().String()
 
 			if err != nil {
 				logger.Error(err, "Failed to clone git repository...")
@@ -119,7 +129,7 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		logger.Info("Found manifest: " + file.Name())
 	}
 
-	// D E S E R I A L I Z E   M A N I F E S T S
+	// D E S E R I A L I Z E   A N D   A P P L Y   M A N I F E S T S
 	for _, file := range files {
 		manifest := manifestsDir + "/" + file.Name()
 		stream, err := os.ReadFile(manifest)
@@ -127,12 +137,71 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			logger.Error(err, "Failed to read manifest file: "+manifest)
 		}
 
-		_, groupVersionKind, err := scheme.Codecs.UniversalDeserializer().Decode(stream, nil, nil)
+		object, groupVersionKind, err := scheme.Codecs.UniversalDeserializer().Decode(stream, nil, nil)
 
 		logger.Info("Parsed a " + groupVersionKind.String() + " from " + manifest)
+
+		mappedObject, err := r.mapDecodedManifest(groupVersionKind, object, logger)
+
+		if err != nil {
+			logger.Error(err, "Application contains a manifest that cannot be mapped, bailing out...")
+			return ctrl.Result{}, nil
+		}
+
+		err = r.createOrUpdateResource(ctx, mappedObject, resourceVersion, logger)
+
+		if err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 
 	return ctrl.Result{}, nil
+}
+
+type FailedToMapDecodedManifest struct{}
+
+func (e *FailedToMapDecodedManifest) Error() string {
+	return "Failed to map decoded manifest!"
+}
+
+func (r *ApplicationReconciler) mapDecodedManifest(groupVersionKind *schema.GroupVersionKind, obj runtime.Object, logger logr.Logger) (client.Object, error) {
+	if groupVersionKind.GroupVersion().String() == "apps/v1" && groupVersionKind.Kind == "Deployment" {
+		deployment := obj.(*v1.Deployment)
+		logger.Info("Object is a Deployment: " + deployment.Name)
+		return deployment, nil
+	} else if groupVersionKind.GroupVersion().String() == "v1" && groupVersionKind.Kind == "Service" {
+		service := obj.(*v12.Service)
+		logger.Info("Object is a Service: " + service.Name)
+		return service, nil
+	}
+
+	return nil, &FailedToMapDecodedManifest{}
+}
+
+func (r *ApplicationReconciler) createOrUpdateResource(ctx context.Context, obj client.Object, resourceVersion string, logger logr.Logger) error {
+	obj.SetNamespace("default")
+
+	err := r.Create(ctx, obj)
+
+	if err != nil {
+		if errors.IsAlreadyExists(err) {
+			logger.Info("Resource " + obj.GetGenerateName() + " exists, updating...")
+
+			//if obj.GetResourceVersion() != resourceVersion {
+			//	obj.SetResourceVersion(resourceVersion)
+			//	return r.Update(ctx, obj)
+			//}
+
+			logger.Info("Resource version is: " + resourceVersion)
+			return nil
+		}
+
+		logger.Error(err, "Failed to create resource: "+obj.GetGenerateName())
+		return err
+	}
+
+	logger.Info("Created resource: " + obj.GetGenerateName())
+	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
