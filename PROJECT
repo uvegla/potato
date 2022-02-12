@@ -1,0 +1,6 @@
+domain: potato.io
+layout:
+- go.kubebuilder.io/v3
+projectName: potato
+repo: github.com/uvegla/potato
+version: "3"
