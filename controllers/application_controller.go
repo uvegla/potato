@@ -49,7 +49,8 @@ type ApplicationReconciler struct {
 func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = log.FromContext(ctx)
 
-	// TODO(user): your logic here
+	logger := log.Log.WithValues("application", req.NamespacedName)
+	logger.Info("Reconciling Application: " + req.Name + " in namespace: " + req.Namespace)
 
 	return ctrl.Result{}, nil
 }
