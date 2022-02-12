@@ -3,4 +3,14 @@ layout:
 - go.kubebuilder.io/v3
 projectName: potato
 repo: github.com/uvegla/potato
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: potato.io
+  group: gitops
+  kind: Application
+  path: github.com/uvegla/potato/api/v1
+  version: v1
 version: "3"
