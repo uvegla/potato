@@ -3,5 +3,5 @@ kind: Application
 metadata:
   name: application-sample
 spec:
-  repository: git@github.com:uvegla/potato.git
+  repository: https://github.com/uvegla/potato-application-1
   ref: master

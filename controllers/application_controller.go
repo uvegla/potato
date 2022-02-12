@@ -18,7 +18,10 @@ package controllers
 
 import (
 	"context"
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"os"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -53,6 +56,8 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	logger := log.Log.WithValues("application", req.NamespacedName)
 	logger.Info("Reconciling Application: " + req.Name + " in namespace: " + req.Namespace)
 
+	// G E T   A P P L I C A T I O N   R E S O U R C E
+
 	application := &gitopsv1.Application{}
 	err := r.Get(ctx, req.NamespacedName, application)
 	if err != nil {
@@ -65,6 +70,30 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	logger.Info("Repository: " + application.Spec.Repository + ", Ref: " + application.Spec.Ref)
+
+	// S E T U P   G I T   R E P O S I T O R Y
+
+	repositoryPath := "/tmp/" + req.NamespacedName.String()
+	logger.Info("Cloning into: " + repositoryPath)
+
+	if _, err := os.Stat(repositoryPath); err != nil {
+		if os.IsNotExist(err) {
+			_, err := git.PlainClone("/tmp/"+req.NamespacedName.String(), false, &git.CloneOptions{
+				URL:           application.Spec.Repository,
+				ReferenceName: plumbing.ReferenceName("refs/heads/" + application.Spec.Ref),
+				Depth:         1,
+				Progress:      os.Stdout,
+			})
+
+			if err != nil {
+				logger.Info("Failed to clone git repository...")
+				return ctrl.Result{}, err
+			}
+		} else {
+			logger.Info("Failed to stat repository...")
+			return ctrl.Result{}, err
+		}
+	}
 
 	return ctrl.Result{}, nil
 }
