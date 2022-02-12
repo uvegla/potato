@@ -23,6 +23,7 @@ import (
 	"io/ioutil"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes/scheme"
 	"os"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -116,6 +117,19 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	for _, file := range files {
 		logger.Info("Found manifest: " + file.Name())
+	}
+
+	// D E S E R I A L I Z E   M A N I F E S T S
+	for _, file := range files {
+		manifest := manifestsDir + "/" + file.Name()
+		stream, err := os.ReadFile(manifest)
+		if err != nil {
+			logger.Error(err, "Failed to read manifest file: "+manifest)
+		}
+
+		_, groupVersionKind, err := scheme.Codecs.UniversalDeserializer().Decode(stream, nil, nil)
+
+		logger.Info("Parsed a " + groupVersionKind.String() + " from " + manifest)
 	}
 
 	return ctrl.Result{}, nil
