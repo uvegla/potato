@@ -20,10 +20,10 @@ import (
 	"context"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"io/ioutil"
 	"k8s.io/apimachinery/pkg/api/errors"
-	"os"
-
 	"k8s.io/apimachinery/pkg/runtime"
+	"os"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -56,6 +56,10 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	logger := log.Log.WithValues("application", req.NamespacedName)
 	logger.Info("Reconciling Application: " + req.Name + " in namespace: " + req.Namespace)
 
+	// S E T U P
+
+	repositoryPath := "/tmp/" + req.NamespacedName.String()
+
 	// G E T   A P P L I C A T I O N   R E S O U R C E
 
 	application := &gitopsv1.Application{}
@@ -63,9 +67,16 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			logger.Info("Application resource not found, object was deleted.")
+			logger.Info("Cleaning up local repository: " + repositoryPath)
+
+			// Clean up local repository if exists
+			if err := os.RemoveAll(repositoryPath); err != nil {
+				logger.Error(err, "Failed to clean up local repository: "+repositoryPath)
+			}
+
 			return ctrl.Result{}, nil
 		}
-		logger.Info("Failed to get Application resource...")
+		logger.Error(err, "Failed to get Application resource...")
 		return ctrl.Result{}, err
 	}
 
@@ -73,7 +84,6 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	// S E T U P   G I T   R E P O S I T O R Y
 
-	repositoryPath := "/tmp/" + req.NamespacedName.String()
 	logger.Info("Cloning into: " + repositoryPath)
 
 	if _, err := os.Stat(repositoryPath); err != nil {
@@ -86,13 +96,26 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			})
 
 			if err != nil {
-				logger.Info("Failed to clone git repository...")
+				logger.Error(err, "Failed to clone git repository...")
 				return ctrl.Result{}, err
 			}
 		} else {
-			logger.Info("Failed to stat repository...")
+			logger.Error(err, "Failed to stat repository...")
 			return ctrl.Result{}, err
 		}
+	}
+
+	// D I S C O V E R   M A N I F E S T S
+
+	manifestsDir := repositoryPath + "/kubernetes"
+	files, err := ioutil.ReadDir(manifestsDir)
+	if err != nil {
+		logger.Error(err, "Failed to read manifests in: "+manifestsDir)
+		return ctrl.Result{}, err
+	}
+
+	for _, file := range files {
+		logger.Info("Found manifest: " + file.Name())
 	}
 
 	return ctrl.Result{}, nil
