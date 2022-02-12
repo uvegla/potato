@@ -35,9 +35,11 @@ spec:
           spec:
             description: ApplicationSpec defines the desired state of Application
             properties:
-              foo:
-                description: Foo is an example field of Application. Edit application_types.go
-                  to remove/update
+              ref:
+                description: Ref pointer to track in the Repository
+                type: string
+              repository:
+                description: Repository where the Application manifests are stored
                 type: string
             type: object
           status:

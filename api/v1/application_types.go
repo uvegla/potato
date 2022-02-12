@@ -28,8 +28,10 @@ type ApplicationSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// Foo is an example field of Application. Edit application_types.go to remove/update
-	Foo string `json:"foo,omitempty"`
+	// Repository where the Application manifests are stored
+	Repository string `json:"repository,omitempty"`
+	// Ref pointer to track in the Repository
+	Ref string `json:"ref,omitempty"`
 }
 
 // ApplicationStatus defines the observed state of Application
