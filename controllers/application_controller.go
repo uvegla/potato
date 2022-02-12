@@ -18,6 +18,7 @@ package controllers
 
 import (
 	"context"
+	"k8s.io/apimachinery/pkg/api/errors"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -51,6 +52,19 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	logger := log.Log.WithValues("application", req.NamespacedName)
 	logger.Info("Reconciling Application: " + req.Name + " in namespace: " + req.Namespace)
+
+	application := &gitopsv1.Application{}
+	err := r.Get(ctx, req.NamespacedName, application)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			logger.Info("Application resource not found, object was deleted.")
+			return ctrl.Result{}, nil
+		}
+		logger.Info("Failed to get Application resource...")
+		return ctrl.Result{}, err
+	}
+
+	logger.Info("Repository: " + application.Spec.Repository + ", Ref: " + application.Spec.Ref)
 
 	return ctrl.Result{}, nil
 }
