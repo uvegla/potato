@@ -129,7 +129,7 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		logger.Info("Found manifest: " + file.Name())
 	}
 
-	// D E S E R I A L I Z E   A N D   A P P L Y   M A N I F E S T S
+	// D E S E R I A L I Z E   A N D   R E C O N C I L E   M A N I F E S T S
 	for _, file := range files {
 		object, groupVersionKind, _ := r.decodeManifest(manifestsDir, file, logger)
 
@@ -138,11 +138,17 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			return ctrl.Result{}, nil
 		}
 
-		err := r.reconcileManifest(groupVersionKind, object, logger)
+		err := r.reconcileManifest(ctx, groupVersionKind, object, logger)
 
 		if err != nil {
-			logger.Error(err, "Application contains a manifest that cannot be mapped, bailing out...")
-			return ctrl.Result{}, nil
+			switch err.(type) {
+			case *FailedToMapDecodedManifest:
+				logger.Error(err, "Application contains a manifest that cannot be mapped, bailing out...")
+				return ctrl.Result{}, nil
+			case *FailedToReconcileManifest:
+				logger.Error(err, "Failed to reconcile manifest: "+file.Name())
+				return ctrl.Result{}, err
+			}
 		}
 	}
 
@@ -171,22 +177,28 @@ func (e *FailedToMapDecodedManifest) Error() string {
 	return "Failed to map decoded manifest!"
 }
 
-func (r *ApplicationReconciler) reconcileManifest(groupVersionKind *schema.GroupVersionKind, obj runtime.Object, logger logr.Logger) error {
+type FailedToReconcileManifest struct{}
+
+func (e *FailedToReconcileManifest) Error() string {
+	return "Failed to reconcile manifest!"
+}
+
+func (r *ApplicationReconciler) reconcileManifest(ctx context.Context, groupVersionKind *schema.GroupVersionKind, obj runtime.Object, logger logr.Logger) error {
 	if groupVersionKind.GroupVersion().String() == "apps/v1" && groupVersionKind.Kind == "Deployment" {
 		deployment := obj.(*appsv1.Deployment)
 		logger.Info("Object is a Deployment: " + deployment.Name)
-		return r.reconcileAppsV1Deployment(deployment)
+		return r.reconcileAppsV1Deployment(ctx, deployment)
 	} else if groupVersionKind.GroupVersion().String() == "v1" && groupVersionKind.Kind == "Service" {
 		service := obj.(*corev1.Service)
 		logger.Info("Object is a Service: " + service.Name)
 
-		return r.reconcileCoreV1Service(service)
+		return r.reconcileCoreV1Service(ctx, service)
 	}
 
 	return &FailedToMapDecodedManifest{}
 }
 
-func (r *ApplicationReconciler) reconcileAppsV1Deployment(deployment *appsv1.Deployment) error {
+func (r *ApplicationReconciler) reconcileAppsV1Deployment(ctx context.Context, deployment *appsv1.Deployment) error {
 	namespacedName := types.NamespacedName{
 		Name:      deployment.Name,
 		Namespace: deployment.Namespace,
@@ -196,18 +208,52 @@ func (r *ApplicationReconciler) reconcileAppsV1Deployment(deployment *appsv1.Dep
 
 	logger.Info("Reconciling deployment: " + namespacedName.String())
 
-	return nil
+	existing := &appsv1.Deployment{}
+	err := r.Get(ctx, namespacedName, existing)
+
+	if err != nil && errors.IsNotFound(err) {
+		logger.Info("Deployment not found, creating: " + namespacedName.String())
+
+		deployment.SetNamespace("default")
+		err := r.Create(ctx, deployment)
+
+		if err != nil {
+			logger.Error(err, "Failed to create deployment: " + namespacedName.String())
+			return &FailedToReconcileManifest{}
+		}
+	} else if err == nil {
+
+	}
+
+	return err
 }
 
-func (r *ApplicationReconciler) reconcileCoreV1Service(service *corev1.Service) error {
+func (r *ApplicationReconciler) reconcileCoreV1Service(ctx context.Context, service *corev1.Service) error {
 	namespacedName := types.NamespacedName{
 		Name:      service.Name,
 		Namespace: service.Namespace,
 	}
 
-	logger := log.Log.WithValues("deployment", namespacedName)
+	logger := log.Log.WithValues("service", namespacedName)
 
 	logger.Info("Reconciling service: " + namespacedName.String())
+
+	existing := &corev1.Service{}
+	err := r.Get(ctx, namespacedName, existing)
+
+	if err != nil && errors.IsNotFound(err) {
+		logger.Info("Service not found, creating: " + namespacedName.String())
+
+		service.SetNamespace("default")
+		err := r.Create(ctx, service)
+
+		if err != nil {
+			logger.Error(err, "Failed to create service: " + namespacedName.String())
+			return &FailedToReconcileManifest{}
+		}
+	} else if err == nil {
+
+	}
 
 	return nil
 }
