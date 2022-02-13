@@ -30,6 +30,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
 	//"k8s.io/client-go/restmapper"
 	"os"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -50,12 +52,8 @@ const NAMESPACE = "default"
 //+kubebuilder:rbac:groups=gitops.potato.io,resources=applications,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=gitops.potato.io,resources=applications/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=gitops.potato.io,resources=applications/finalizers,verbs=update
-
-// Watch deployments
 //+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=apps,resources=deployments/status,verbs=get
-
-// Watch services
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=services/status,verbs=get;update;patch
 
@@ -102,10 +100,10 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	// S E T U P   G I T   R E P O S I T O R Y
 
-	logger.Info("Cloning into: " + repositoryPath)
-
 	if _, err := os.Stat(repositoryPath); err != nil {
 		if os.IsNotExist(err) {
+			logger.Info("Cloning into: " + repositoryPath)
+
 			_, err := git.PlainClone("/tmp/"+req.NamespacedName.String(), false, &git.CloneOptions{
 				URL:           application.Spec.Repository,
 				ReferenceName: plumbing.ReferenceName("refs/heads/" + application.Spec.Ref),
@@ -148,7 +146,7 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			return ctrl.Result{}, nil
 		}
 
-		err := r.reconcileManifest(ctx, groupVersionKind, object, logger)
+		err := r.reconcileManifest(ctx, application, groupVersionKind, object, logger)
 
 		if err != nil {
 			switch err.(type) {
@@ -193,22 +191,22 @@ func (e *FailedToReconcileManifest) Error() string {
 	return "Failed to reconcile manifest!"
 }
 
-func (r *ApplicationReconciler) reconcileManifest(ctx context.Context, groupVersionKind *schema.GroupVersionKind, obj runtime.Object, logger logr.Logger) error {
+func (r *ApplicationReconciler) reconcileManifest(ctx context.Context, owner *gitopsv1.Application, groupVersionKind *schema.GroupVersionKind, obj runtime.Object, logger logr.Logger) error {
 	if groupVersionKind.GroupVersion().String() == "apps/v1" && groupVersionKind.Kind == "Deployment" {
 		deployment := obj.(*appsv1.Deployment)
 		logger.Info("Object is a Deployment: " + deployment.Name)
-		return r.reconcileAppsV1Deployment(ctx, deployment)
+		return r.reconcileAppsV1Deployment(ctx, owner, deployment)
 	} else if groupVersionKind.GroupVersion().String() == "v1" && groupVersionKind.Kind == "Service" {
 		service := obj.(*corev1.Service)
 		logger.Info("Object is a Service: " + service.Name)
 
-		return r.reconcileCoreV1Service(ctx, service)
+		return r.reconcileCoreV1Service(ctx, owner, service)
 	}
 
 	return &FailedToMapDecodedManifest{}
 }
 
-func (r *ApplicationReconciler) reconcileAppsV1Deployment(ctx context.Context, deployment *appsv1.Deployment) error {
+func (r *ApplicationReconciler) reconcileAppsV1Deployment(ctx context.Context, owner *gitopsv1.Application, deployment *appsv1.Deployment) error {
 	namespacedName := types.NamespacedName{
 		Name:      deployment.Name,
 		Namespace: NAMESPACE,
@@ -225,6 +223,12 @@ func (r *ApplicationReconciler) reconcileAppsV1Deployment(ctx context.Context, d
 		logger.Info("Deployment not found, creating: " + namespacedName.String())
 
 		deployment.SetNamespace(NAMESPACE)
+
+		if err := controllerutil.SetControllerReference(owner, deployment, r.Scheme); err != nil {
+			logger.Error(err, "Failed to set owner reference on deployment: "+namespacedName.String())
+			return err
+		}
+
 		err := r.Create(ctx, deployment)
 
 		if err != nil {
@@ -238,7 +242,7 @@ func (r *ApplicationReconciler) reconcileAppsV1Deployment(ctx context.Context, d
 	return err
 }
 
-func (r *ApplicationReconciler) reconcileCoreV1Service(ctx context.Context, service *corev1.Service) error {
+func (r *ApplicationReconciler) reconcileCoreV1Service(ctx context.Context, owner *gitopsv1.Application, service *corev1.Service) error {
 	namespacedName := types.NamespacedName{
 		Name:      service.Name,
 		Namespace: NAMESPACE,
@@ -255,6 +259,12 @@ func (r *ApplicationReconciler) reconcileCoreV1Service(ctx context.Context, serv
 		logger.Info("Service not found, creating: " + namespacedName.String())
 
 		service.SetNamespace(NAMESPACE)
+
+		if err := controllerutil.SetControllerReference(owner, service, r.Scheme); err != nil {
+			logger.Error(err, "Failed to set owner reference on service: "+namespacedName.String())
+			return err
+		}
+
 		err := r.Create(ctx, service)
 
 		if err != nil {
