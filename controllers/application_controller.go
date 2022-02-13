@@ -270,7 +270,7 @@ func (r *ApplicationReconciler) reconcileAppsV1Deployment(ctx context.Context, o
 		if !patchResult.IsEmpty() {
 			logger.Info("Deployment differs, updating to desired state...")
 
-			existing.Spec.Replicas = deployment.Spec.Replicas
+			existing.Spec = deployment.Spec
 
 			// TODO Shameful copy pasting
 			existing.SetNamespace(NAMESPACE)
@@ -319,6 +319,10 @@ func (r *ApplicationReconciler) reconcileCoreV1Service(ctx context.Context, owne
 			return err
 		}
 
+		if err := patch.DefaultAnnotator.SetLastAppliedAnnotation(service); err != nil {
+			logger.Error(err, "Failed to set last applied annotation!")
+		}
+
 		err := r.Create(ctx, service)
 
 		if err != nil {
@@ -326,20 +330,39 @@ func (r *ApplicationReconciler) reconcileCoreV1Service(ctx context.Context, owne
 			return &FailedToReconcileManifest{}
 		}
 	} else if err == nil {
-		//logger.Info("Service exists, keeping it up-to-date")
-		//
-		//// TODO Shameful copy pasting
-		//service.SetNamespace(NAMESPACE)
-		//
-		//if err := controllerutil.SetControllerReference(owner, service, r.Scheme); err != nil {
-		//	logger.Error(err, "Failed to set owner reference on service: "+namespacedName.String())
-		//	return err
-		//}
-		//
-		//if err := r.Update(ctx, service); err != nil {
-		//	logger.Error(err, "Failed to update service: "+namespacedName.String())
-		//	return err
-		//}
+		logger.Info("Service found...")
+
+		patchResult, err := patch.DefaultPatchMaker.Calculate(existing, service)
+
+		if err != nil {
+			return err
+		}
+
+		if !patchResult.IsEmpty() {
+			logger.Info("Service differs, updating to desired state...")
+
+			existing.Spec.Selector = service.Spec.Selector
+			existing.Spec.Ports = service.Spec.Ports
+
+			// TODO Shameful copy pasting
+			existing.SetNamespace(NAMESPACE)
+
+			if err := controllerutil.SetControllerReference(owner, existing, r.Scheme); err != nil {
+				logger.Error(err, "Failed to set owner reference on deployment!")
+				return err
+			}
+
+			if err := patch.DefaultAnnotator.SetLastAppliedAnnotation(service); err != nil {
+				logger.Error(err, "Failed to set last applied annotation!")
+			}
+
+			if err := r.Update(ctx, existing); err != nil {
+				logger.Error(err, "Failed to update service!")
+				return err
+			}
+		} else {
+			logger.Info("Service matches desired state, yay!")
+		}
 	}
 
 	return nil
