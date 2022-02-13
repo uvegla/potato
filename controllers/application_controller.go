@@ -21,12 +21,14 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-logr/logr"
+	"io/fs"
 	"io/ioutil"
-	v1 "k8s.io/api/apps/v1"
-	v12 "k8s.io/api/core/v1"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	//"k8s.io/client-go/restmapper"
 	"os"
@@ -92,7 +94,6 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	logger.Info("Cloning into: " + repositoryPath)
 
-	resourceVersion := "1"
 	if _, err := os.Stat(repositoryPath); err != nil {
 		if os.IsNotExist(err) {
 			_, err := git.PlainClone("/tmp/"+req.NamespacedName.String(), false, &git.CloneOptions{
@@ -102,7 +103,6 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 				Progress:      os.Stdout,
 			})
 
-			// TODO Handle errors
 			//head, _ := repository.Head()
 			//resourceVersion = head.Hash().String()
 
@@ -131,31 +131,38 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	// D E S E R I A L I Z E   A N D   A P P L Y   M A N I F E S T S
 	for _, file := range files {
-		manifest := manifestsDir + "/" + file.Name()
-		stream, err := os.ReadFile(manifest)
+		object, groupVersionKind, _ := r.decodeManifest(manifestsDir, file, logger)
+
 		if err != nil {
-			logger.Error(err, "Failed to read manifest file: "+manifest)
+			logger.Error(err, "Failed to decode manifest: "+file.Name()+", bailing out")
+			return ctrl.Result{}, nil
 		}
 
-		object, groupVersionKind, err := scheme.Codecs.UniversalDeserializer().Decode(stream, nil, nil)
-
-		logger.Info("Parsed a " + groupVersionKind.String() + " from " + manifest)
-
-		mappedObject, err := r.mapDecodedManifest(groupVersionKind, object, logger)
+		err := r.reconcileManifest(groupVersionKind, object, logger)
 
 		if err != nil {
 			logger.Error(err, "Application contains a manifest that cannot be mapped, bailing out...")
 			return ctrl.Result{}, nil
 		}
-
-		err = r.createOrUpdateResource(ctx, mappedObject, resourceVersion, logger)
-
-		if err != nil {
-			return ctrl.Result{}, err
-		}
 	}
 
 	return ctrl.Result{}, nil
+}
+
+func (r *ApplicationReconciler) decodeManifest(manifestsDir string, file fs.FileInfo, logger logr.Logger) (runtime.Object, *schema.GroupVersionKind, error) {
+	manifest := manifestsDir + "/" + file.Name()
+
+	stream, err := os.ReadFile(manifest)
+	if err != nil {
+		logger.Error(err, "Failed to read manifest file: "+manifest)
+		return nil, nil, err
+	}
+
+	object, groupVersionKind, err := scheme.Codecs.UniversalDeserializer().Decode(stream, nil, nil)
+
+	logger.Info("Parsed a " + groupVersionKind.String() + " from " + manifest)
+
+	return object, groupVersionKind, err
 }
 
 type FailedToMapDecodedManifest struct{}
@@ -164,49 +171,78 @@ func (e *FailedToMapDecodedManifest) Error() string {
 	return "Failed to map decoded manifest!"
 }
 
-func (r *ApplicationReconciler) mapDecodedManifest(groupVersionKind *schema.GroupVersionKind, obj runtime.Object, logger logr.Logger) (client.Object, error) {
+func (r *ApplicationReconciler) reconcileManifest(groupVersionKind *schema.GroupVersionKind, obj runtime.Object, logger logr.Logger) error {
 	if groupVersionKind.GroupVersion().String() == "apps/v1" && groupVersionKind.Kind == "Deployment" {
-		deployment := obj.(*v1.Deployment)
+		deployment := obj.(*appsv1.Deployment)
 		logger.Info("Object is a Deployment: " + deployment.Name)
-		return deployment, nil
+		return r.reconcileAppsV1Deployment(deployment)
 	} else if groupVersionKind.GroupVersion().String() == "v1" && groupVersionKind.Kind == "Service" {
-		service := obj.(*v12.Service)
+		service := obj.(*corev1.Service)
 		logger.Info("Object is a Service: " + service.Name)
-		return service, nil
+
+		return r.reconcileCoreV1Service(service)
 	}
 
-	return nil, &FailedToMapDecodedManifest{}
+	return &FailedToMapDecodedManifest{}
 }
 
-func (r *ApplicationReconciler) createOrUpdateResource(ctx context.Context, obj client.Object, resourceVersion string, logger logr.Logger) error {
-	obj.SetNamespace("default")
-
-	err := r.Create(ctx, obj)
-
-	if err != nil {
-		if errors.IsAlreadyExists(err) {
-			logger.Info("Resource " + obj.GetGenerateName() + " exists, updating...")
-
-			//if obj.GetResourceVersion() != resourceVersion {
-			//	obj.SetResourceVersion(resourceVersion)
-			//	return r.Update(ctx, obj)
-			//}
-
-			logger.Info("Resource version is: " + resourceVersion)
-			return nil
-		}
-
-		logger.Error(err, "Failed to create resource: "+obj.GetGenerateName())
-		return err
+func (r *ApplicationReconciler) reconcileAppsV1Deployment(deployment *appsv1.Deployment) error {
+	namespacedName := types.NamespacedName{
+		Name:      deployment.Name,
+		Namespace: deployment.Namespace,
 	}
 
-	logger.Info("Created resource: " + obj.GetGenerateName())
+	logger := log.Log.WithValues("deployment", namespacedName)
+
+	logger.Info("Reconciling deployment: " + namespacedName.String())
+
 	return nil
 }
+
+func (r *ApplicationReconciler) reconcileCoreV1Service(service *corev1.Service) error {
+	namespacedName := types.NamespacedName{
+		Name:      service.Name,
+		Namespace: service.Namespace,
+	}
+
+	logger := log.Log.WithValues("deployment", namespacedName)
+
+	logger.Info("Reconciling service: " + namespacedName.String())
+
+	return nil
+}
+
+//func (r *ApplicationReconciler) createOrUpdateResource(ctx context.Context, obj client.Object, resourceVersion string, logger logr.Logger) error {
+//	obj.SetNamespace("default")
+//
+//	err := r.Create(ctx, obj)
+//
+//	if err != nil {
+//		if errors.IsAlreadyExists(err) {
+//			logger.Info("Resource " + obj.GetGenerateName() + " exists, updating...")
+//
+//			//if obj.GetResourceVersion() != resourceVersion {
+//			//	obj.SetResourceVersion(resourceVersion)
+//			//	return r.Update(ctx, obj)
+//			//}
+//
+//			logger.Info("Resource version is: " + resourceVersion)
+//			return nil
+//		}
+//
+//		logger.Error(err, "Failed to create resource: "+obj.GetGenerateName())
+//		return err
+//	}
+//
+//	logger.Info("Created resource: " + obj.GetGenerateName())
+//	return nil
+//}
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *ApplicationReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&gitopsv1.Application{}).
+		Owns(&appsv1.Deployment{}).
+		Owns(&corev1.Service{}).
 		Complete(r)
 }
