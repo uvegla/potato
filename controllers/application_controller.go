@@ -108,8 +108,8 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			_, err := git.PlainClone("/tmp/"+req.NamespacedName.String(), false, &git.CloneOptions{
 				URL:           application.Spec.Repository,
 				ReferenceName: plumbing.ReferenceName("refs/heads/" + application.Spec.Ref),
-				Depth:         1,
-				Progress:      os.Stdout,
+				//Depth:         1,
+				Progress: os.Stdout,
 			})
 
 			//head, _ := repository.Head()
@@ -122,6 +122,22 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		} else {
 			logger.Error(err, "Failed to stat repository...")
 			return ctrl.Result{}, err
+		}
+	} else {
+		logger.Info("Repository exists at: " + repositoryPath + ", pulling changes...")
+
+		repository, err := git.PlainOpen(repositoryPath)
+
+		if err != nil {
+			logger.Error(err, "Failed to open repository...")
+		}
+
+		workTree, _ := repository.Worktree()
+
+		if err := workTree.Pull(&git.PullOptions{RemoteName: "origin"}); err != nil {
+			if err == git.NoErrAlreadyUpToDate {
+				logger.Info("Repository is already up to date")
+			}
 		}
 	}
 
