@@ -31,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"time"
 
 	//"k8s.io/client-go/restmapper"
 	"os"
@@ -160,7 +161,8 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		}
 	}
 
-	return ctrl.Result{}, nil
+	// Requeue for periodically checking on the state of the repository
+	return ctrl.Result{Requeue: true, RequeueAfter: time.Duration(10) * time.Second}, nil
 }
 
 func (r *ApplicationReconciler) decodeManifest(manifestsDir string, file fs.FileInfo, logger logr.Logger) (runtime.Object, *schema.GroupVersionKind, error) {
