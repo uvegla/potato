@@ -25,6 +25,7 @@ import (
 	"io/ioutil"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -238,23 +239,44 @@ func (r *ApplicationReconciler) reconcileAppsV1Deployment(ctx context.Context, o
 	err := r.Get(ctx, namespacedName, existing)
 
 	if err != nil && errors.IsNotFound(err) {
-		logger.Info("Deployment not found, creating: " + namespacedName.String())
+		logger.Info("Deployment not found, creating...")
 
 		deployment.SetNamespace(NAMESPACE)
 
 		if err := controllerutil.SetControllerReference(owner, deployment, r.Scheme); err != nil {
-			logger.Error(err, "Failed to set owner reference on deployment: "+namespacedName.String())
+			logger.Error(err, "Failed to set owner reference on deployment!")
 			return err
 		}
 
 		err := r.Create(ctx, deployment)
 
 		if err != nil {
-			logger.Error(err, "Failed to create deployment: "+namespacedName.String())
+			logger.Error(err, "Failed to create deployment!")
 			return &FailedToReconcileManifest{}
 		}
 	} else if err == nil {
+		logger.Info("Deployment found...")
 
+		if !equality.Semantic.DeepEqual(existing.Spec, deployment.Spec) {
+			logger.Info("Deployment differs, updating to desired state...")
+
+			existing.Spec.Replicas = deployment.Spec.Replicas
+
+			// TODO Shameful copy pasting
+			existing.SetNamespace(NAMESPACE)
+
+			if err := controllerutil.SetControllerReference(owner, existing, r.Scheme); err != nil {
+				logger.Error(err, "Failed to set owner reference on deployment!")
+				return err
+			}
+
+			if err := r.Update(ctx, existing); err != nil {
+				logger.Error(err, "Failed to update deployment!")
+				return err
+			}
+		} else {
+			logger.Info("Deployment matches desired state, yay!")
+		}
 	}
 
 	return err
@@ -290,7 +312,20 @@ func (r *ApplicationReconciler) reconcileCoreV1Service(ctx context.Context, owne
 			return &FailedToReconcileManifest{}
 		}
 	} else if err == nil {
-
+		//logger.Info("Service exists, keeping it up-to-date")
+		//
+		//// TODO Shameful copy pasting
+		//service.SetNamespace(NAMESPACE)
+		//
+		//if err := controllerutil.SetControllerReference(owner, service, r.Scheme); err != nil {
+		//	logger.Error(err, "Failed to set owner reference on service: "+namespacedName.String())
+		//	return err
+		//}
+		//
+		//if err := r.Update(ctx, service); err != nil {
+		//	logger.Error(err, "Failed to update service: "+namespacedName.String())
+		//	return err
+		//}
 	}
 
 	return nil
