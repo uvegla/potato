@@ -18,6 +18,7 @@ package controllers
 
 import (
 	"context"
+	"github.com/banzaicloud/k8s-objectmatcher/patch"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-logr/logr"
@@ -25,7 +26,6 @@ import (
 	"io/ioutil"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -248,6 +248,10 @@ func (r *ApplicationReconciler) reconcileAppsV1Deployment(ctx context.Context, o
 			return err
 		}
 
+		if err := patch.DefaultAnnotator.SetLastAppliedAnnotation(deployment); err != nil {
+			logger.Error(err, "Failed to set last applied annotation!")
+		}
+
 		err := r.Create(ctx, deployment)
 
 		if err != nil {
@@ -257,7 +261,13 @@ func (r *ApplicationReconciler) reconcileAppsV1Deployment(ctx context.Context, o
 	} else if err == nil {
 		logger.Info("Deployment found...")
 
-		if !equality.Semantic.DeepEqual(existing.Spec, deployment.Spec) {
+		patchResult, err := patch.DefaultPatchMaker.Calculate(existing, deployment)
+
+		if err != nil {
+			return err
+		}
+
+		if !patchResult.IsEmpty() {
 			logger.Info("Deployment differs, updating to desired state...")
 
 			existing.Spec.Replicas = deployment.Spec.Replicas
@@ -268,6 +278,10 @@ func (r *ApplicationReconciler) reconcileAppsV1Deployment(ctx context.Context, o
 			if err := controllerutil.SetControllerReference(owner, existing, r.Scheme); err != nil {
 				logger.Error(err, "Failed to set owner reference on deployment!")
 				return err
+			}
+
+			if err := patch.DefaultAnnotator.SetLastAppliedAnnotation(deployment); err != nil {
+				logger.Error(err, "Failed to set last applied annotation!")
 			}
 
 			if err := r.Update(ctx, existing); err != nil {
