@@ -45,6 +45,8 @@ type ApplicationReconciler struct {
 	Scheme *runtime.Scheme
 }
 
+const NAMESPACE = "default"
+
 //+kubebuilder:rbac:groups=gitops.potato.io,resources=applications,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=gitops.potato.io,resources=applications/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=gitops.potato.io,resources=applications/finalizers,verbs=update
@@ -201,7 +203,7 @@ func (r *ApplicationReconciler) reconcileManifest(ctx context.Context, groupVers
 func (r *ApplicationReconciler) reconcileAppsV1Deployment(ctx context.Context, deployment *appsv1.Deployment) error {
 	namespacedName := types.NamespacedName{
 		Name:      deployment.Name,
-		Namespace: deployment.Namespace,
+		Namespace: NAMESPACE,
 	}
 
 	logger := log.Log.WithValues("deployment", namespacedName)
@@ -214,11 +216,11 @@ func (r *ApplicationReconciler) reconcileAppsV1Deployment(ctx context.Context, d
 	if err != nil && errors.IsNotFound(err) {
 		logger.Info("Deployment not found, creating: " + namespacedName.String())
 
-		deployment.SetNamespace("default")
+		deployment.SetNamespace(NAMESPACE)
 		err := r.Create(ctx, deployment)
 
 		if err != nil {
-			logger.Error(err, "Failed to create deployment: " + namespacedName.String())
+			logger.Error(err, "Failed to create deployment: "+namespacedName.String())
 			return &FailedToReconcileManifest{}
 		}
 	} else if err == nil {
@@ -231,7 +233,7 @@ func (r *ApplicationReconciler) reconcileAppsV1Deployment(ctx context.Context, d
 func (r *ApplicationReconciler) reconcileCoreV1Service(ctx context.Context, service *corev1.Service) error {
 	namespacedName := types.NamespacedName{
 		Name:      service.Name,
-		Namespace: service.Namespace,
+		Namespace: NAMESPACE,
 	}
 
 	logger := log.Log.WithValues("service", namespacedName)
@@ -244,11 +246,11 @@ func (r *ApplicationReconciler) reconcileCoreV1Service(ctx context.Context, serv
 	if err != nil && errors.IsNotFound(err) {
 		logger.Info("Service not found, creating: " + namespacedName.String())
 
-		service.SetNamespace("default")
+		service.SetNamespace(NAMESPACE)
 		err := r.Create(ctx, service)
 
 		if err != nil {
-			logger.Error(err, "Failed to create service: " + namespacedName.String())
+			logger.Error(err, "Failed to create service: "+namespacedName.String())
 			return &FailedToReconcileManifest{}
 		}
 	} else if err == nil {
