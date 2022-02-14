@@ -175,6 +175,13 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		}
 	}
 
+	// C L E A N   U P
+	//var children client.ObjectList
+	//if err := r.List(ctx, children, client.InNamespace(NAMESPACE), ???); err != nil {
+	//	logger.Error(err, "unable to owned object")
+	//	return ctrl.Result{}, err
+	//}
+
 	// Requeue for periodically checking on the state of the repository
 	return ctrl.Result{Requeue: true, RequeueAfter: time.Duration(10) * time.Second}, nil
 }
@@ -230,7 +237,7 @@ func (r *ApplicationReconciler) reconcileAppsV1Deployment(ctx context.Context, o
 
 	logger := log.Log.WithValues("deployment", namespacedName)
 
-	logger.Info("Reconciling deployment: " + namespacedName.String())
+	logger.Info("Reconciling deployment...")
 
 	existing := &appsv1.Deployment{}
 	err := r.Get(ctx, namespacedName, existing)
@@ -301,18 +308,18 @@ func (r *ApplicationReconciler) reconcileCoreV1Service(ctx context.Context, owne
 
 	logger := log.Log.WithValues("service", namespacedName)
 
-	logger.Info("Reconciling service: " + namespacedName.String())
+	logger.Info("Reconciling service...")
 
 	existing := &corev1.Service{}
 	err := r.Get(ctx, namespacedName, existing)
 
 	if err != nil && errors.IsNotFound(err) {
-		logger.Info("Service not found, creating: " + namespacedName.String())
+		logger.Info("Service not found, creating...")
 
 		service.SetNamespace(NAMESPACE)
 
 		if err := controllerutil.SetControllerReference(owner, service, r.Scheme); err != nil {
-			logger.Error(err, "Failed to set owner reference on service: "+namespacedName.String())
+			logger.Error(err, "Failed to set owner reference on service!")
 			return err
 		}
 
@@ -323,7 +330,7 @@ func (r *ApplicationReconciler) reconcileCoreV1Service(ctx context.Context, owne
 		err := r.Create(ctx, service)
 
 		if err != nil {
-			logger.Error(err, "Failed to create service: "+namespacedName.String())
+			logger.Error(err, "Failed to create service!")
 			return &FailedToReconcileManifest{}
 		}
 	} else if err == nil {
@@ -345,7 +352,7 @@ func (r *ApplicationReconciler) reconcileCoreV1Service(ctx context.Context, owne
 			existing.SetNamespace(NAMESPACE)
 
 			if err := controllerutil.SetControllerReference(owner, existing, r.Scheme); err != nil {
-				logger.Error(err, "Failed to set owner reference on deployment!")
+				logger.Error(err, "Failed to set owner reference on service!")
 				return err
 			}
 
