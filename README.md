@@ -7,9 +7,13 @@ Kubernetes operator example for Potato CD.
 We would like you to implement a Kubernetes Operator which synchronizes a Git repository with a Kubernetes cluster
 when a GitOps Custom Resource is created - essentially, a stripped down “demo” version of Flux or Argo CD.
 
-### Architecture overview
+### Project overview
 
 Built with Kubebuilder. The CRD is of API version `gitops.potato.io/v1` and called `Application`.
+
+Used libraries:
+- https://github.com/go-git/go-git/ to work with the repositories
+- https://github.com/banzaicloud/k8s-objectmatcher for comparing actual and desired state
 
 The `Application` CRD supports the following properties:
 - `Repository`: This is a URL pointing to the repository that contains the Kubernetes manifests
@@ -32,6 +36,12 @@ The following constraints apply to the controller implementation:
 - Changing the repository has no effect, it will be ignored by the controller
 - The branch name is only taken into account at cloning, switching branches is not implemented
 - Manifest removed from the repository are not cleaned up
+
+Beyond that, the following issues are known:
+- There are some unnecessary reconciliations taking places. I first tried `reflect.DeepEqual` as suggested in the
+  `kubebuilder` book, then `apiequality.Semantic.DeepEqual` with the same results. Then settled with the Banzai Cloud
+  k8s-objectmatcher library
+- The controller test are quite minimal, for some reason I cannot get the deployment to work there so far
 
 ### Testing
 
