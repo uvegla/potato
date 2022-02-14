@@ -69,12 +69,9 @@ const NAMESPACE = "default"
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.11.0/pkg/reconcile
 func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = log.FromContext(ctx)
-
-	logger := log.Log.WithValues("application", req.NamespacedName)
-	logger.Info("Reconciling Application: " + req.Name + " in namespace: " + req.Namespace)
-
 	// S E T U P
+	logger := log.FromContext(ctx)
+	logger.Info("Reconciling Application: " + req.Name + " in namespace: " + req.Namespace)
 
 	repositoryPath := "/tmp/" + req.NamespacedName.String()
 
