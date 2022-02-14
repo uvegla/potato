@@ -1,0 +1,7 @@
+apiVersion: gitops.potato.io/v1
+kind: Application
+metadata:
+  name: potato-application-2
+spec:
+  repository: https://github.com/uvegla/potato-application-2
+  ref: master
