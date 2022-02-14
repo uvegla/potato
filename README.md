@@ -32,3 +32,22 @@ The following constraints apply to the controller implementation:
 - Changing the repository has no effect, it will be ignored by the controller
 - The branch name is only taken into account at cloning, switching branches is not implemented
 - Manifest removed from the repository are not cleaned up
+
+### Testing
+
+There are 2 sample applications in the following repositories:
+- https://github.com/uvegla/potato-application-1 (Sample: config/samples/potato_application_1.yaml)
+  - This contains a simple nginx deployment with 3 replicas and a service in from of them
+- https://github.com/uvegla/potato-application-2 (Sample: config/samples/potato_application_2.yaml)
+  - This contains a simple deployment of a cowsay webapp with a single replica
+
+### Workflow
+
+There was no time limit set, so I constrained myself to achieve and learn as much as I can within ~3days (24 hours).
+
+I prioritised based on the fact that I wanted to achieve the following to at least some extent:
+- Check out available technology and tooling and choose a stack to build on
+- Get a working solution that implements at least some required functionality
+- Try how testing works and implement the very least some dummy test case for the controller
+- Add basic documentation of the project
+- Prepare presentation
