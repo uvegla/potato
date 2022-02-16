@@ -4,6 +4,7 @@ import (
 	"context"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"time"
@@ -18,9 +19,9 @@ var _ = Describe("Application controller", func() {
 
 		ApplicationRepository = "https://github.com/uvegla/potato-application-2"
 
-		CowSayDeploymentName      = "cowsay"
-		CowSayDeploymentNamespace = "default"
-		CowSayDeploymentReplicas  = 1
+		CowSayDeploymentName            = "cowsay"
+		CowSayDeploymentNamespace       = "default"
+		CowSayDeploymentReplicas  int32 = 1
 
 		timeout  = time.Second * 10
 		duration = time.Second * 10
@@ -65,28 +66,28 @@ var _ = Describe("Application controller", func() {
 
 			Expect(application.Spec.Repository).Should(Equal(ApplicationRepository))
 
-			//deploymentKey := types.NamespacedName{Name: CowSayDeploymentName, Namespace: CowSayDeploymentNamespace}
-			//expectedDeployment := &appsv1.Deployment{}
-			//
-			//Eventually(func() bool {
-			//	err := k8sClient.Get(ctx, deploymentKey, expectedDeployment)
-			//
-			//	if err != nil {
-			//		return false
-			//	}
-			//
-			//	return true
-			//}, timeout, interval).Should(BeTrue())
-			//
-			//Consistently(func() (int32, error) {
-			//	err := k8sClient.Get(ctx, deploymentKey, expectedDeployment)
-			//
-			//	if err != nil {
-			//		return 0, err
-			//	}
-			//
-			//	return *expectedDeployment.Spec.Replicas, nil
-			//}, duration, interval).Should(Equal(CowSayDeploymentReplicas))
+			deploymentKey := types.NamespacedName{Name: CowSayDeploymentName, Namespace: CowSayDeploymentNamespace}
+			expectedDeployment := &appsv1.Deployment{}
+
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, deploymentKey, expectedDeployment)
+
+				if err != nil {
+					return false
+				}
+
+				return true
+			}, timeout, interval).Should(BeTrue())
+
+			Consistently(func() (int32, error) {
+				err := k8sClient.Get(ctx, deploymentKey, expectedDeployment)
+
+				if err != nil {
+					return 0, err
+				}
+
+				return *expectedDeployment.Spec.Replicas, nil
+			}, duration, interval).Should(Equal(CowSayDeploymentReplicas))
 		})
 	})
 })
