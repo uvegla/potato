@@ -41,7 +41,12 @@ Beyond that, the following issues are known:
 - There are some unnecessary reconciliations taking places. I first tried `reflect.DeepEqual` as suggested in the
   `kubebuilder` book, then `apiequality.Semantic.DeepEqual` with the same results. Then settled with the Banzai Cloud
   k8s-objectmatcher library
-- The controller test are quite minimal, for some reason I cannot get the deployment to work there so far
+
+Beyond fixing, improving the above the following could be improved:
+- Add some webhooks to handle defaults - e.g. branch name - and validation - for valid urls for repository
+- Support private repositories by supporting different kinds of authentication and different repository URL formats
+- The tests rely on an outside resource, the application-2 repository which makes writing more complex tests harder,
+  and they are unstable / unreliable this way
 
 ### Testing
 
